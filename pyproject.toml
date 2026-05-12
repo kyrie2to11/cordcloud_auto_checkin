@@ -1,0 +1,10 @@
+[project]
+name = "cloaktest"
+version = "0.1.0"
+description = "CordCloud auto login + daily check-in with CloakBrowser + POP3 email verification"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "cloakbrowser>=0.3.0",
+    "python-dotenv>=1.0.0",
+]

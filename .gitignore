@@ -1,0 +1,23 @@
+# 敏感配置
+.env
+*.env
+!*.env.example
+
+# CloakBrowser 持久化配置
+cloak_profile/
+
+# 调试输出
+debug_html/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+.venv/
+uv.lock
+
+# 系统
+.DS_Store
+Thumbs.db
+.claude
