@@ -15,7 +15,6 @@ __pycache__/
 *.egg-info/
 dist/
 .venv/
-uv.lock
 
 # 系统
 .DS_Store

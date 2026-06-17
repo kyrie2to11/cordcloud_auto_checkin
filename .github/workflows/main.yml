@@ -1,8 +1,19 @@
-name: cloak_brower_checkin
+name: CordCloud Auto Check-in
+
 on:
   schedule:
-    - cron: '0 0 * * *'
-  workflow_dispatch: 
+    # Beijing time 08:00 every day.
+    - cron: '0 8 * * *'
+      timezone: Asia/Shanghai
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cordcloud-auto-checkin
+  cancel-in-progress: false
+
 jobs:
   auto_checkin:
     runs-on: ubuntu-latest
@@ -10,28 +21,28 @@ jobs:
     env:
       TZ: Asia/Shanghai
     steps:
-      - name: Check Date
+      - name: Check date
         run: date
-      - name: Check out cordcloud_api branch
-        uses: actions/checkout@v6
+
+      - name: Check out repository
+        uses: actions/checkout@v6.0.3
         with:
           ref: master
-      - name: astral-sh/setup-uv
-        # You may pin to the exact commit or the version.
-        # uses: astral-sh/setup-uv@4959332f0f014c5280e7eac8b70c90cb574c9f9b
-        uses: astral-sh/setup-uv@v8.1.0
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v8.2.0
         with:
-          # The version of uv to install e.g., `0.5.0` Defaults to the version in pyproject.toml or 'latest'.
-          version: latest # optional, default is 
-          # Path to a file containing the version of uv to install. Defaults to searching for uv.toml and if not found pyproject.toml.
-          python-version: 3.12 # optional
-          # Enable uploading of the uv cache
-          enable-cache: true # optional, default is auto
-          # Glob pattern to match files relative to the repository root to control the cache.
-      - name: install dependencies
-        run:
-          uv sync
-      - name: run task
+          version: "0.11.21"
+          python-version: "3.12"
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --locked
+
+      - name: Run tests
+        run: uv run python -m unittest discover -s tests
+
+      - name: Run check-in
         env:
           CORDCLOUD_EMAIL: ${{ secrets.CORDCLOUD_EMAIL }}
           CORDCLOUD_PASSWORD: ${{ secrets.CORDCLOUD_PASSWORD }}
@@ -45,9 +56,8 @@ jobs:
           SMTP_HOST: ${{ vars.SMTP_HOST }}
           SMTP_PORT: ${{ vars.SMTP_PORT }}
           SMTP_USE_SSL: ${{ vars.SMTP_USE_SSL }}
-          USE_PERSISTENT_CONTEXT: ${{ vars.USE_PERSISTENT_CONTEXT }}
-          HEADLESS: ${{ vars.HEADLESS }}
-          SAVE_HTML: ${{ vars.SAVE_HTML }}
-        run:
-          uv run python main.py
-    
+          POP3_SCAN_LIMIT: ${{ vars.POP3_SCAN_LIMIT || '10' }}
+          HEADLESS: "true"
+          SAVE_HTML: "false"
+          USE_PERSISTENT_CONTEXT: "false"
+        run: uv run python main.py

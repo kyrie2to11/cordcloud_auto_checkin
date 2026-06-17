@@ -32,6 +32,7 @@ uv run python main.py
 | `POP3_USE_SSL` | 是否使用 SSL 连接 | `true` |
 | `POP3_USERNAME` | POP3 用户名（默认同 CordCloud 邮箱） | - |
 | `POP3_PASSWORD` | POP3 邮箱密码 | - |
+| `POP3_SCAN_LIMIT` | 每次轮询扫描最近 N 封邮件 | `10` |
 | `SMTP_HOST` | SMTP 服务器地址 | `smtp.qq.com` |
 | `SMTP_PORT` | SMTP 端口 | `465` |
 | `SMTP_USE_SSL` | SMTP 使用 SSL | `true` |
@@ -48,6 +49,41 @@ uv run python main.py
 4. 登录后查找"每日签到"按钮并点击
 5. 显示签到结果后退出
 6. 通过 SMTP 发送签到结果邮件通知（自己发给自己）
+
+## GitHub Actions 自动运行
+
+项目已包含 GitHub Actions workflow：`.github/workflows/main.yml`。
+
+- 每天北京时间 `08:00` 自动运行一次
+- 支持在 GitHub Actions 页面通过 `workflow_dispatch` 手动触发
+- CI 中固定 `HEADLESS=true`、`SAVE_HTML=false`，适合 GitHub 的无头 runner 环境
+
+需要在 GitHub 仓库的 `cloak_check_in_env` environment 中配置：
+
+Secrets:
+
+| 名称 | 说明 |
+|------|------|
+| `CORDCLOUD_EMAIL` | CordCloud 登录邮箱 |
+| `CORDCLOUD_PASSWORD` | CordCloud 登录密码 |
+| `POP3_USERNAME` | POP3 用户名 |
+| `POP3_PASSWORD` | POP3 邮箱密码 |
+| `SMTP_USERNAME` | SMTP 用户名 |
+| `SMTP_PASSWORD` | SMTP 授权码 |
+
+Variables:
+
+| 名称 | 推荐值 |
+|------|--------|
+| `POP3_HOST` | 邮箱 POP3 服务器 |
+| `POP3_PORT` | `995` |
+| `POP3_USE_SSL` | `true` |
+| `POP3_SCAN_LIMIT` | `10` |
+| `SMTP_HOST` | 邮箱 SMTP 服务器 |
+| `SMTP_PORT` | `465` |
+| `SMTP_USE_SSL` | `true` |
+
+GitHub Actions runner 是临时环境，持久化浏览器 profile 不会长期保留；因此云端运行通常每次都可能重新登录并触发 2FA。
 
 ## 邮件通知
 
