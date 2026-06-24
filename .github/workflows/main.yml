@@ -2,9 +2,8 @@ name: CordCloud Auto Check-in
 
 on:
   schedule:
-    # Beijing time 09:30 every day.
-    - cron: "30 1 * * *"
-      timezone: Asia/Shanghai
+    # Beijing time 08:00, 10:00, 12:00, 14:00, 16:00 every day.
+    - cron: "0 0,2,4,6,8 * * *"
   workflow_dispatch:
 
 permissions:
@@ -20,16 +19,34 @@ jobs:
     environment: cloak_check_in_env
     env:
       TZ: Asia/Shanghai
+      MAX_CHECKIN_ATTEMPTS: "4"
+      CHECKIN_RETRY_DELAY_SECONDS: "300"
     steps:
       - name: Check date
-        run: date
+        id: checkin-date
+        run: |
+          date
+          echo "date=$(date +%F)" >> "$GITHUB_OUTPUT"
 
       - name: Check out repository
         uses: actions/checkout@v6.0.3
         with:
           ref: master
 
+      - name: Restore daily success marker
+        id: daily-success
+        if: github.event_name == 'schedule'
+        uses: actions/cache/restore@v4
+        with:
+          path: .checkin-success
+          key: cordcloud-checkin-success-${{ steps.checkin-date.outputs.date }}
+
+      - name: Skip if already checked in today
+        if: github.event_name == 'schedule' && steps.daily-success.outputs.cache-hit == 'true'
+        run: echo "Daily check-in already succeeded for ${{ steps.checkin-date.outputs.date }}."
+
       - name: Set up uv
+        if: github.event_name != 'schedule' || steps.daily-success.outputs.cache-hit != 'true'
         uses: astral-sh/setup-uv@v8.2.0
         with:
           version: "0.11.21"
@@ -37,12 +54,15 @@ jobs:
           enable-cache: true
 
       - name: Install dependencies
+        if: github.event_name != 'schedule' || steps.daily-success.outputs.cache-hit != 'true'
         run: uv sync --locked
 
       - name: Run tests
+        if: github.event_name != 'schedule' || steps.daily-success.outputs.cache-hit != 'true'
         run: uv run python -m unittest discover -s tests
 
       - name: Run check-in
+        if: github.event_name != 'schedule' || steps.daily-success.outputs.cache-hit != 'true'
         env:
           CORDCLOUD_EMAIL: ${{ secrets.CORDCLOUD_EMAIL }}
           CORDCLOUD_PASSWORD: ${{ secrets.CORDCLOUD_PASSWORD }}
@@ -60,4 +80,32 @@ jobs:
           HEADLESS: "true"
           SAVE_HTML: "false"
           USE_PERSISTENT_CONTEXT: "false"
-        run: uv run python main.py
+        run: |
+          for attempt in $(seq 1 "$MAX_CHECKIN_ATTEMPTS"); do
+            echo "Check-in attempt ${attempt}/${MAX_CHECKIN_ATTEMPTS}"
+            if uv run python main.py; then
+              echo "Check-in confirmed."
+              exit 0
+            fi
+
+            if [ "$attempt" -lt "$MAX_CHECKIN_ATTEMPTS" ]; then
+              echo "Check-in not confirmed; retrying in ${CHECKIN_RETRY_DELAY_SECONDS}s."
+              sleep "$CHECKIN_RETRY_DELAY_SECONDS"
+            fi
+          done
+
+          echo "Check-in was not confirmed after ${MAX_CHECKIN_ATTEMPTS} attempts."
+          exit 1
+
+      - name: Write daily success marker
+        if: github.event_name == 'schedule' && steps.daily-success.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p .checkin-success
+          date --iso-8601=seconds > .checkin-success/success.txt
+
+      - name: Save daily success marker
+        if: github.event_name == 'schedule' && steps.daily-success.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .checkin-success
+          key: cordcloud-checkin-success-${{ steps.checkin-date.outputs.date }}

@@ -51,6 +51,17 @@ def fill_verification_code(page, code: str) -> bool:
     return True
 
 
+def text_indicates_checkin_success(text: str) -> bool:
+    """Return whether page text looks like a completed traffic check-in."""
+    normalized = text.strip()
+    if not normalized:
+        return False
+    if "已签到" in normalized:
+        return True
+    has_traffic_amount = re.search(r"\d+(?:\.\d+)?\s*(?:KB|MB|GB|TB)", normalized, re.IGNORECASE)
+    return bool(has_traffic_amount and ("获得" in normalized or "流量" in normalized))
+
+
 def save_page_state(settings: Settings, page, step_name: str) -> str | None:
     """Save current page HTML and screenshot for debugging."""
     if not settings.save_html:
@@ -76,7 +87,7 @@ def save_page_state(settings: Settings, page, step_name: str) -> str | None:
         return None
 
 
-def run_checkin(settings: Settings) -> None:
+def run_checkin(settings: Settings) -> bool:
     print("=" * 60)
     print("CordCloud Auto Login + Daily Check-in")
     print(f"CloakBrowser + POP3 ({settings.pop3_host}:{settings.pop3_port})")
@@ -84,7 +95,7 @@ def run_checkin(settings: Settings) -> None:
 
     if not settings.cordcloud_email or not settings.cordcloud_password:
         print("[ERROR] 请先配置 .env 文件中的 CORDCLOUD_EMAIL 和 CORDCLOUD_PASSWORD")
-        return
+        return False
 
     print("\n[Browser] 启动 CloakBrowser...")
     settings.persistent_profile_dir.mkdir(parents=True, exist_ok=True)
@@ -105,6 +116,7 @@ def run_checkin(settings: Settings) -> None:
 
     results = []
     checkin_screenshot = None
+    checkin_success = False
 
     try:
         print("\n[Step 1] 检查登录状态...")
@@ -172,16 +184,16 @@ def run_checkin(settings: Settings) -> None:
                 code, error = fetch_latest_verification_code(settings, timeout_seconds=90, since_time=login_click_time)
                 if error or not code:
                     print(f"[Step 2] ❌ {error}")
-                    return
+                    return False
 
                 try:
                     if not fill_verification_code(page, code):
                         save_page_state(settings, page, "step4_code_fill_failed")
-                        return
+                        return False
                 except Exception as e:
                     print(f"[Step 2] ⚠️ 填写验证码异常: {e}")
                     print("[Step 2] ⚠️ 未找到 #code 输入框")
-                    return
+                    return False
 
                 page.locator("#btn-verify").click()
                 print("[Step 2] 已提交验证，等待响应...")
@@ -197,7 +209,7 @@ def run_checkin(settings: Settings) -> None:
                             error_text = (msg_el.text_content() or "").strip()
                             print(f"[Step 2] ❌ 2FA 验证失败: {error_text}")
                             results.append(f"[Step 2] 2FA 验证失败: {error_text}")
-                            return
+                            return False
                     except Exception:
                         pass
                     print("[Step 2] ⚠️ 2FA 提交后未跳转，状态未知")
@@ -215,7 +227,7 @@ def run_checkin(settings: Settings) -> None:
                     error_msg = (msg_el.text_content() or "").strip()
                     if error_msg:
                         print(f"[Step 2] ❌ 登录错误: {error_msg}")
-                        return
+                        return False
             except Exception:
                 pass
 
@@ -252,6 +264,7 @@ def run_checkin(settings: Settings) -> None:
                     except Exception:
                         print("[Step 3] 今日已签到")
                         results.append("[Step 3] 今日已签到")
+                    checkin_success = True
                 else:
                     print(f"[Step 3] 点击签到按钮: '{btn_text}'")
                     checkin_btn.click()
@@ -266,9 +279,26 @@ def run_checkin(settings: Settings) -> None:
                                 print(f"[Step 3] 签到结果: {checkin_msg}")
                     except Exception:
                         pass
-                    results.append(f"[Step 3] 签到完成: {checkin_msg or '已执行'}")
 
-            print("[Step 3] ✅ 签到操作完成")
+                    post_btn_text = ""
+                    post_btn_done = False
+                    try:
+                        post_btn_text = (checkin_btn.text_content() or "").strip()
+                        post_btn_done = checkin_btn.is_disabled() or "已签到" in post_btn_text
+                    except Exception:
+                        pass
+
+                    checkin_success = post_btn_done or text_indicates_checkin_success(checkin_msg)
+                    if checkin_success:
+                        results.append(f"[Step 3] 签到成功: {checkin_msg or post_btn_text or '已签到'}")
+                    else:
+                        print("[Step 3] ⚠️ 签到后未确认获得流量或已签到状态")
+                        results.append(f"[Step 3] 签到结果未确认: {checkin_msg or post_btn_text or '无页面反馈'}")
+
+            if checkin_success:
+                print("[Step 3] ✅ 签到操作完成")
+            else:
+                print("[Step 3] ❌ 签到未成功确认")
             checkin_screenshot = save_page_state(settings, page, "step6_after_checkin")
         except Exception as e:
             print(f"[Step 3] ⚠️ 签到操作异常: {e}")
@@ -280,8 +310,12 @@ def run_checkin(settings: Settings) -> None:
         send_result_email(settings, email_subject, email_body, checkin_screenshot)
 
         print("\n" + "=" * 60)
-        print("✅ 任务完成")
+        if checkin_success:
+            print("✅ 任务完成")
+        else:
+            print("❌ 任务未成功完成")
         print("=" * 60)
+        return checkin_success
 
     except Exception as e:
         print(f"\n[ERROR] {e}")
@@ -289,6 +323,7 @@ def run_checkin(settings: Settings) -> None:
 
         traceback.print_exc()
         results.append(f"[ERROR] {e}")
+        return False
 
     finally:
         print("\n[Browser] 保持浏览器打开（5秒后自动关闭）...")
