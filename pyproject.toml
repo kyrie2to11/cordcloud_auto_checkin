@@ -5,7 +5,7 @@ description = "CordCloud auto login + daily check-in with CloakBrowser + POP3 em
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "cloakbrowser>=0.3.0",
+    "cloakbrowser>=0.4.0",
     "httpx[socks]>=0.28.0",
     "python-dotenv>=1.0.0",
 ]
